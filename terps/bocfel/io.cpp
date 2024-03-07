@@ -82,14 +82,6 @@ IO::IO(const std::string *filename, Mode mode, Purpose purpose) :
         smode[1] = 0;
     }
 
-    // No need to prompt.
-    if (filename != nullptr) {
-        m_type = Type::StandardIO;
-        m_file = File(std::fopen(filename->c_str(), smode), true);
-        if (m_file.stdio == nullptr) {
-            throw OpenError();
-        }
-    } else { // Prompt.
 #ifdef ZTERP_GLK
         frefid_t ref;
         glui32 usage, filemode;
@@ -126,10 +118,19 @@ IO::IO(const std::string *filename, Mode mode, Purpose purpose) :
             throw OpenError();
         }
 
+    // No need to prompt.
+    if (filename != nullptr) {
+        ref = glk_fileref_create_by_name_uncleaned(usage, const_cast<char *>(filename->c_str()), 0);
+        if (ref == nullptr) {
+            throw OpenError();
+        }
+    }
+    else {
         ref = glk_fileref_create_by_prompt(usage, filemode, 0);
         if (ref == nullptr) {
             throw OpenError();
         }
+    }
 
         m_type = Type::Glk;
         m_file = File(glk_stream_open_file(ref, filemode, 0));
@@ -138,6 +139,14 @@ IO::IO(const std::string *filename, Mode mode, Purpose purpose) :
             throw OpenError();
         }
 #else
+    // No need to prompt.
+    if (filename != nullptr) {
+        m_type = Type::StandardIO;
+        m_file = File(std::fopen(filename->c_str(), smode), true);
+        if (m_file.stdio == nullptr) {
+            throw OpenError();
+        }
+    } else { // Prompt.
         std::string fn, prompt;
 
         switch (m_purpose) {
@@ -167,8 +176,8 @@ IO::IO(const std::string *filename, Mode mode, Purpose purpose) :
         if (m_file.stdio == nullptr) {
             throw OpenError();
         }
-#endif
     }
+#endif
 }
 
 // Instead of being file-backed, indicate that this I/O object is
@@ -603,7 +612,11 @@ long IO::filesize()
         return m_file.backing.memory.size();
 #ifdef ZTERP_GLK
     case Type::Glk:
-        break;
+        glui32 oldpos = glk_stream_get_position(m_file.glk.get());
+        glk_stream_set_position(m_file.glk.get(), 0, seekmode_End);
+        glui32 length = glk_stream_get_position(m_file.glk.get());
+        glk_stream_set_position(m_file.glk.get(), oldpos, seekmode_Start);
+        return length;
 #endif
     }
 
